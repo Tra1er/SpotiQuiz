@@ -15,45 +15,22 @@ function shuffle(array) {
 }
 
 /**
- * Fetch 30-second audio preview from iTunes API.
- * This is a workaround since Spotify deprecated preview_url for 3rd party apps.
+ * Scrape the 30-second audio preview directly from the Spotify Embed widget.
+ * This bypasses the API restrictions that set preview_url to null.
  */
-async function getItunesPreview(trackName, artistName) {
+async function getSpotifyEmbedPreview(trackId) {
   try {
-    // Clean up track name (remove " - Remastered", "(feat. x)", etc) for better iTunes search
-    const cleanName = trackName.split(' - ')[0].split('(')[0].trim();
-    const cleanArtist = artistName.split(',')[0].trim();
+    const embedRes = await fetch(`https://open.spotify.com/embed/track/${trackId}`);
+    if (!embedRes.ok) return null;
     
-    // Request more results so we have options to filter through
-    const query = encodeURIComponent(`${cleanName} ${cleanArtist}`);
-    const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=10`);
-    
-    if (!res.ok) return null;
-    
-    const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      // Find the first result that has a previewUrl AND where the artist name matches closely
-      const match = data.results.find(r => {
-        if (!r.previewUrl) return false;
-        
-        const iArtist = r.artistName.toLowerCase();
-        const sArtist = cleanArtist.toLowerCase();
-        const iTrack = r.trackName.toLowerCase();
-        
-        // Exclude fake/karaoke/cover tracks that often hijack search results
-        const isCover = iArtist.includes('karaoke') || iArtist.includes('tribute') || 
-                        iArtist.includes('cover') || iTrack.includes('karaoke') || 
-                        iTrack.includes('cover') || iTrack.includes('tribute');
-        if (isCover) return false;
-
-        // Ensure the artist name from Spotify is somewhat in the iTunes artist name
-        return iArtist.includes(sArtist) || sArtist.includes(iArtist);
-      });
-      return match ? match.previewUrl : null;
+    const embedHtml = await embedRes.text();
+    // The embed HTML contains a JSON blob with the preview URL
+    const audioUrlMatch = embedHtml.match(/"audioPreview":\{"url":"(https:\/\/[^"]+)"/);
+    if (audioUrlMatch && audioUrlMatch[1]) {
+      return audioUrlMatch[1];
     }
   } catch (e) {
-    console.error('iTunes fetch error:', e);
-    return null;
+    console.error('Spotify Embed scrape error:', e);
   }
   return null;
 }
@@ -97,7 +74,7 @@ export async function POST(request) {
       let previewUrl = track.previewUrl;
       
       if (!previewUrl) {
-         previewUrl = await getItunesPreview(track.name, track.artist);
+         previewUrl = await getSpotifyEmbedPreview(track.id);
       }
 
       if (previewUrl) {
