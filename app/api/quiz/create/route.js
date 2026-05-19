@@ -24,15 +24,31 @@ async function getItunesPreview(trackName, artistName) {
     const cleanName = trackName.split(' - ')[0].split('(')[0].trim();
     const cleanArtist = artistName.split(',')[0].trim();
     
+    // Request more results so we have options to filter through
     const query = encodeURIComponent(`${cleanName} ${cleanArtist}`);
-    const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=3`);
+    const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=10`);
     
     if (!res.ok) return null;
     
     const data = await res.json();
     if (data.results && data.results.length > 0) {
-      // Find the first result that has a previewUrl
-      const match = data.results.find(r => r.previewUrl);
+      // Find the first result that has a previewUrl AND where the artist name matches closely
+      const match = data.results.find(r => {
+        if (!r.previewUrl) return false;
+        
+        const iArtist = r.artistName.toLowerCase();
+        const sArtist = cleanArtist.toLowerCase();
+        const iTrack = r.trackName.toLowerCase();
+        
+        // Exclude fake/karaoke/cover tracks that often hijack search results
+        const isCover = iArtist.includes('karaoke') || iArtist.includes('tribute') || 
+                        iArtist.includes('cover') || iTrack.includes('karaoke') || 
+                        iTrack.includes('cover') || iTrack.includes('tribute');
+        if (isCover) return false;
+
+        // Ensure the artist name from Spotify is somewhat in the iTunes artist name
+        return iArtist.includes(sArtist) || sArtist.includes(iArtist);
+      });
       return match ? match.previewUrl : null;
     }
   } catch (e) {
