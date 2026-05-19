@@ -16,6 +16,34 @@ function shuffle(array) {
   return arr;
 }
 
+/**
+ * Fetch 30-second audio preview from iTunes API.
+ * This is a workaround since Spotify deprecated preview_url for 3rd party apps.
+ */
+async function getItunesPreview(trackName, artistName) {
+  try {
+    // Clean up track name (remove " - Remastered", "(feat. x)", etc) for better iTunes search
+    const cleanName = trackName.split(' - ')[0].split('(')[0].trim();
+    const cleanArtist = artistName.split(',')[0].trim();
+    
+    const query = encodeURIComponent(`${cleanName} ${cleanArtist}`);
+    const res = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=3`);
+    
+    if (!res.ok) return null;
+    
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      // Find the first result that has a previewUrl
+      const match = data.results.find(r => r.previewUrl);
+      return match ? match.previewUrl : null;
+    }
+  } catch (e) {
+    console.error('iTunes fetch error:', e);
+    return null;
+  }
+  return null;
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -25,7 +53,6 @@ export async function POST(request) {
       return Response.json({ error: 'playlistId is required' }, { status: 400 });
     }
 
-    // Try user token first, fall back to client credentials
     let accessToken;
     const session = await getServerSession(authOptions);
 
@@ -35,29 +62,44 @@ export async function POST(request) {
       accessToken = await getClientCredentialsToken();
     }
 
-    // Fetch playlist info and tracks (handles pagination for any size)
+    // Fetch playlist info and tracks
     const [playlistInfo, allTracks] = await Promise.all([
       getPlaylistInfo(accessToken, playlistId),
       getPlaylistTracks(accessToken, playlistId),
     ]);
 
-    // Filter tracks that have a preview URL
-    const tracksWithPreview = allTracks.filter((t) => t.previewUrl);
+    // Spotify's preview_url is now mostly null. We must find N tracks with previews (Spotify or iTunes)
+    const shuffledPool = shuffle(allTracks.filter(t => t && t.name));
+    const selectedTracks = [];
+    let tracksChecked = 0;
 
-    if (tracksWithPreview.length < 4) {
+    // Process in batches so we don't hit iTunes rate limits too hard, but still fast enough
+    for (const track of shuffledPool) {
+      if (selectedTracks.length >= numRounds) break;
+      if (tracksChecked > 100) break; // Don't loop forever if playlist is obscure
+      
+      tracksChecked++;
+      
+      let previewUrl = track.previewUrl;
+      
+      if (!previewUrl) {
+         previewUrl = await getItunesPreview(track.name, track.artist);
+      }
+
+      if (previewUrl) {
+        track.previewUrl = previewUrl; // Attach working preview
+        selectedTracks.push(track);
+      }
+    }
+
+    if (selectedTracks.length < 4) {
       return Response.json(
         {
-          error: `Not enough tracks with previews. Found ${tracksWithPreview.length} tracks with audio previews, but need at least 4.`,
+          error: `Could not find enough audio previews. Found ${selectedTracks.length}, but need at least 4. Try a playlist with more mainstream songs.`,
         },
         { status: 400 }
       );
     }
-
-    // Determine actual number of rounds (can't exceed available tracks)
-    const actualRounds = Math.min(numRounds, tracksWithPreview.length);
-
-    // Shuffle and pick tracks for rounds
-    const selectedTracks = shuffle(tracksWithPreview).slice(0, actualRounds);
 
     // Build rounds with multiple-choice options
     const rounds = selectedTracks.map((track) => {
@@ -68,8 +110,6 @@ export async function POST(request) {
         .map((t) => `${t.name} — ${t.artist}`);
 
       const correctAnswer = `${track.name} — ${track.artist}`;
-
-      // Shuffle options so correct answer isn't always in the same position
       const options = shuffle([correctAnswer, ...decoys]);
 
       return {
@@ -83,7 +123,6 @@ export async function POST(request) {
       };
     });
 
-    // Save quiz
     const quizId = randomUUID().slice(0, 8);
     saveQuiz(quizId, {
       playlistName: playlistInfo.name,
@@ -94,9 +133,9 @@ export async function POST(request) {
 
     return Response.json({
       quizId,
-      totalRounds: actualRounds,
+      totalRounds: selectedTracks.length,
       playlistName: playlistInfo.name,
-      tracksWithPreviews: tracksWithPreview.length,
+      tracksWithPreviews: selectedTracks.length,
       totalTracks: allTracks.length,
     });
   } catch (error) {
