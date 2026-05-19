@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import { getClientCredentialsToken } from '@/lib/spotify';
+import { getPlaylistTracks, getPlaylistInfo } from '@/lib/spotify';
 
 export async function GET() {
   try {
@@ -20,38 +20,36 @@ export async function GET() {
       return Response.json({ error: 'No playlists found' });
     }
 
-    // Try with User Token
-    const resUser = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=1`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
+    const allTracks = await getPlaylistTracks(session.accessToken, playlistId);
     
-    // Try with Client Credentials Token
-    let clientStatus = 0;
-    let clientError = null;
-    try {
-      const clientToken = await getClientCredentialsToken();
-      const resClient = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=1`, {
-        headers: { Authorization: `Bearer ${clientToken}` },
+    if (!allTracks || allTracks.length === 0) {
+      // Dump the raw playlist to see why tracks are missing
+      const rawRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      clientStatus = resClient.status;
-      if (!resClient.ok) clientError = await resClient.text();
-    } catch (e) {
-      clientError = e.message;
+      return Response.json({ error: 'allTracks is empty', rawPlaylist: await rawRes.json() });
     }
 
-    // Try fetching the full playlist instead of just /tracks
-    const resFull = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?limit=1`, {
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-    });
+    const testTrack = allTracks[0];
+    const cleanName = testTrack.name.split(' - ')[0].split('(')[0].trim();
+    const cleanArtist = testTrack.artist.split(',')[0].trim();
+    const query = encodeURIComponent(`${cleanName} ${cleanArtist}`);
+    const itunesUrl = `https://itunes.apple.com/search?term=${query}&entity=song&limit=3`;
+    
+    let itunesData = null;
+    try {
+      const iRes = await fetch(itunesUrl);
+      itunesData = await iRes.json();
+    } catch (e) {
+      itunesData = e.message;
+    }
 
     return Response.json({ 
       playlistId,
-      userTokenStatus: resUser.status,
-      userTokenError: resUser.ok ? null : await resUser.text(),
-      clientTokenStatus: clientStatus,
-      clientTokenError: clientError,
-      fullPlaylistStatus: resFull.status,
-      fullPlaylistError: resFull.ok ? null : await resFull.text()
+      tracksFound: allTracks.length,
+      testTrack,
+      itunesUrl,
+      itunesData
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
