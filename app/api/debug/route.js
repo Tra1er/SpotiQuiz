@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import { getPlaylistTracks, getPlaylistInfo } from '@/lib/spotify';
+import { getPlaylistTracks } from '@/lib/spotify';
 
 export async function GET() {
   try {
@@ -21,35 +21,23 @@ export async function GET() {
     }
 
     const allTracks = await getPlaylistTracks(session.accessToken, playlistId);
-    
     if (!allTracks || allTracks.length === 0) {
-      // Dump the raw playlist to see why tracks are missing
-      const rawRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      return Response.json({ error: 'allTracks is empty', rawPlaylist: await rawRes.json() });
+      return Response.json({ error: 'allTracks is empty' });
     }
 
     const testTrack = allTracks[0];
-    const cleanName = testTrack.name.split(' - ')[0].split('(')[0].trim();
-    const cleanArtist = testTrack.artist.split(',')[0].trim();
-    const query = encodeURIComponent(`${cleanName} ${cleanArtist}`);
-    const itunesUrl = `https://itunes.apple.com/search?term=${query}&entity=song&limit=3`;
     
-    let itunesData = null;
-    try {
-      const iRes = await fetch(itunesUrl);
-      itunesData = await iRes.json();
-    } catch (e) {
-      itunesData = e.message;
-    }
+    // Fetch the single track explicitly to check for preview_url
+    const trackRes = await fetch(`https://api.spotify.com/v1/tracks/${testTrack.id}`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    
+    const trackData = await trackRes.json();
 
     return Response.json({ 
-      playlistId,
-      tracksFound: allTracks.length,
-      testTrack,
-      itunesUrl,
-      itunesData
+      playlistTrackObject: testTrack,
+      directTrackObjectPreview: trackData.preview_url,
+      directTrackObject: trackData
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
