@@ -27,27 +27,20 @@ export async function GET() {
 
     const testTrack = allTracks[0];
     
-    // Fetch an anonymous token from the web player
-    const tokenRes = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-    const tokenData = await tokenRes.json();
-    const webToken = tokenData.accessToken;
-
-    // Fetch the single track explicitly using the web player token
-    const trackRes = await fetch(`https://api.spotify.com/v1/tracks/${testTrack.id}`, {
-      headers: { Authorization: `Bearer ${webToken}` },
-    });
+    // Scrape the embed widget
+    const embedRes = await fetch(`https://open.spotify.com/embed/track/${testTrack.id}`);
+    const embedHtml = await embedRes.text();
     
-    const trackData = await trackRes.json();
-
+    // Look for anything resembling a preview url in the HTML
+    const previewMatch = embedHtml.match(/"preview_url":"(https:\/\/[^"]+)"/);
+    const audioUrlMatch = embedHtml.match(/"audioPreview":\{"url":"(https:\/\/[^"]+)"/);
+    
     return Response.json({ 
-      webTokenStatus: tokenRes.status,
+      embedStatus: embedRes.status,
       playlistTrackObject: testTrack,
-      directTrackObjectPreview: trackData.preview_url,
-      directTrackObject: trackData
+      foundPreview1: previewMatch ? previewMatch[1] : null,
+      foundPreview2: audioUrlMatch ? audioUrlMatch[1] : null,
+      htmlSnippet: embedHtml.substring(0, 500)
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
