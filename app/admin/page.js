@@ -95,67 +95,13 @@ function ConfigModal({ playlist, onClose, onCreated }) {
   );
 }
 
-function ShareView({ quizData }) {
-  const [copied, setCopied] = useState(false);
-  const quizUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/play?quiz=${quizData.quizId}`
-    : '';
-
-  function handleCopy() {
-    navigator.clipboard.writeText(quizUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="share-card glass-card">
-      <h2>Quiz Ready! 🎉</h2>
-      <p className="share-subtitle">Share this link with anyone to let them play</p>
-
-      <div className="share-link-box">
-        <input type="text" readOnly value={quizUrl} onClick={(e) => e.target.select()} />
-        <button className="btn btn-primary" onClick={handleCopy}>
-          {copied ? '✓' : 'Copy'}
-        </button>
-      </div>
-
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 16 }}>
-        Quiz code: <strong style={{ color: 'var(--spotify-green)' }}>{quizData.quizId}</strong>
-      </p>
-
-      <div className="share-stats">
-        <div className="share-stat">
-          <div className="value">{quizData.totalRounds}</div>
-          <div className="label">Rounds</div>
-        </div>
-        <div className="share-stat">
-          <div className="value">{quizData.tracksWithPreviews}</div>
-          <div className="label">Previews</div>
-        </div>
-        <div className="share-stat">
-          <div className="value">{quizData.totalTracks}</div>
-          <div className="label">Total Tracks</div>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 32, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <button className="btn btn-primary" onClick={() => window.open(`/play?quiz=${quizData.quizId}`, '_blank')}>
-          Play Now
-        </button>
-        <button className="btn btn-secondary" onClick={() => window.location.reload()}>
-          Create Another
-        </button>
-      </div>
-    </div>
-  );
-}
+// ShareView removed for single-player local storage
 
 function AdminContent() {
   const { data: session, status } = useSession();
   const [playlists, setPlaylists] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
-  const [createdQuiz, setCreatedQuiz] = useState(null);
   const [error, setError] = useState(null);
   const router = useRouter();
 
@@ -218,9 +164,7 @@ function AdminContent() {
     );
   }
 
-  if (createdQuiz) {
-    return <ShareView quizData={createdQuiz} />;
-  }
+  // No longer using ShareView, jumping straight to play
 
   return (
     <div className="admin-container">
@@ -275,8 +219,8 @@ function AdminContent() {
           playlist={selectedPlaylist}
           onClose={() => setSelectedPlaylist(null)}
           onCreated={(data) => {
-            setSelectedPlaylist(null);
-            setCreatedQuiz(data);
+            sessionStorage.setItem('spotiQuizData', JSON.stringify(data));
+            router.push('/play');
           }}
         />
       )}

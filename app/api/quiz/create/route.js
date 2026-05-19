@@ -123,21 +123,17 @@ export async function POST(request) {
       };
     });
 
-    const quizId = randomUUID().slice(0, 8);
-    saveQuiz(quizId, {
+    const quiz = {
       playlistName: playlistInfo.name,
       playlistImage: playlistInfo.image,
       previewDuration,
-      rounds,
-    });
-
-    return Response.json({
-      quizId,
       totalRounds: selectedTracks.length,
-      playlistName: playlistInfo.name,
       tracksWithPreviews: selectedTracks.length,
       totalTracks: allTracks.length,
-    });
+      rounds,
+    };
+
+    return Response.json(quiz);
   } catch (error) {
     console.error('Error creating quiz:', error);
     return Response.json({ error: 'Failed to create quiz' }, { status: 500 });

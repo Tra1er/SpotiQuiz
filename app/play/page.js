@@ -38,9 +38,7 @@ function Confetti() {
 
 /* ─── Main Quiz Component ─── */
 function QuizPlayer() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const quizId = searchParams.get('quiz');
 
   const [quiz, setQuiz] = useState(null);
   const [phase, setPhase] = useState('loading'); // loading, lobby, playing, result, finished
@@ -54,28 +52,19 @@ function QuizPlayer() {
   const audioRef = useRef(null);
   const timerRef = useRef(null);
 
-  // Fetch quiz data
+  // Load quiz from sessionStorage
   useEffect(() => {
-    if (!quizId) {
-      setError('No quiz code provided');
-      setPhase('error');
-      return;
-    }
-    fetchQuiz();
-  }, [quizId]);
-
-  async function fetchQuiz() {
     try {
-      const res = await fetch(`/api/quiz/${quizId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Quiz not found');
+      const stored = sessionStorage.getItem('spotiQuizData');
+      if (!stored) throw new Error('No quiz found in session');
+      const data = JSON.parse(stored);
       setQuiz(data);
       setPhase('lobby');
     } catch (err) {
       setError(err.message);
       setPhase('error');
     }
-  }
+  }, []);
 
   // Start the quiz
   function startQuiz() {
@@ -132,7 +121,7 @@ function QuizPlayer() {
   }
 
   // Submit answer
-  const submitAnswer = useCallback(async (roundIndex, answer) => {
+  const submitAnswer = useCallback((roundIndex, answer) => {
     if (selectedAnswer !== null) return;
     setSelectedAnswer(answer);
     clearInterval(timerRef.current);
@@ -143,12 +132,16 @@ function QuizPlayer() {
     }
 
     try {
-      const res = await fetch(`/api/quiz/${quizId}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roundIndex, answer }),
-      });
-      const data = await res.json();
+      const round = quiz.rounds[roundIndex];
+      const isCorrect = round.correctAnswer === answer;
+      const data = {
+        isCorrect,
+        track: {
+          name: round.trackName,
+          artist: round.artist,
+          albumImage: round.albumImage
+        }
+      };
 
       if (data.isCorrect) {
         setScore((s) => s + 1);
@@ -160,7 +153,7 @@ function QuizPlayer() {
       // Fallback — still show result phase
       setPhase('result');
     }
-  }, [quizId, selectedAnswer]);
+  }, [quiz, selectedAnswer]);
 
   // Next round or finish
   function nextRound() {
