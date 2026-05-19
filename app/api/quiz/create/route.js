@@ -1,8 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import { getPlaylistTracks, getPlaylistInfo, getClientCredentialsToken } from '@/lib/spotify';
-import { saveQuiz } from '@/lib/quizStore';
-import { randomUUID } from 'crypto';
 
 /**
  * Shuffle array using Fisher-Yates algorithm.
