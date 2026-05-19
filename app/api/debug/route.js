@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
+import { getClientCredentialsToken } from '@/lib/spotify';
 
 export async function GET() {
   try {
@@ -9,7 +10,6 @@ export async function GET() {
       return Response.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Try fetching the first user playlist's tracks
     const res1 = await fetch('https://api.spotify.com/v1/me/playlists?limit=1', {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
@@ -20,35 +20,38 @@ export async function GET() {
       return Response.json({ error: 'No playlists found' });
     }
 
-    const res2 = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=5`, {
+    // Try with User Token
+    const resUser = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=1`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     
-    const text2 = await res2.text();
-    let data2;
-    try { data2 = JSON.parse(text2); } catch { data2 = text2; }
-
-    if (!res2.ok) {
-      return Response.json({
-        status: res2.status,
-        playlistId,
-        errorData: data2
+    // Try with Client Credentials Token
+    let clientStatus = 0;
+    let clientError = null;
+    try {
+      const clientToken = await getClientCredentialsToken();
+      const resClient = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=1`, {
+        headers: { Authorization: `Bearer ${clientToken}` },
       });
+      clientStatus = resClient.status;
+      if (!resClient.ok) clientError = await resClient.text();
+    } catch (e) {
+      clientError = e.message;
     }
 
-    // Map to just what we care about to keep payload small
-    const mapped = data2.items?.map(i => ({
-      name: i.track?.name,
-      id: i.track?.id,
-      preview: i.track?.preview_url,
-      hasTrack: !!i.track
-    }));
+    // Try fetching the full playlist instead of just /tracks
+    const resFull = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?limit=1`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
 
     return Response.json({ 
-      status: res2.status,
       playlistId,
-      rawItem: data2.items?.[0],
-      mapped
+      userTokenStatus: resUser.status,
+      userTokenError: resUser.ok ? null : await resUser.text(),
+      clientTokenStatus: clientStatus,
+      clientTokenError: clientError,
+      fullPlaylistStatus: resFull.status,
+      fullPlaylistError: resFull.ok ? null : await resFull.text()
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
