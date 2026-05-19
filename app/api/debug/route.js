@@ -9,14 +9,36 @@ export async function GET() {
       return Response.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const res = await fetch('https://api.spotify.com/v1/me/playlists?limit=2', {
+    // Try fetching the first user playlist's tracks
+    const res1 = await fetch('https://api.spotify.com/v1/me/playlists?limit=1', {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
+    const data1 = await res1.json();
+    const playlistId = data1.items?.[0]?.id;
 
-    const data = await res.json();
+    if (!playlistId) {
+      return Response.json({ error: 'No playlists found' });
+    }
+
+    const res2 = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=5`, {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    });
+    
+    const data2 = await res2.json();
+
+    // Map to just what we care about to keep payload small
+    const mapped = data2.items?.map(i => ({
+      name: i.track?.name,
+      id: i.track?.id,
+      preview: i.track?.preview_url,
+      hasTrack: !!i.track
+    }));
+
     return Response.json({ 
-      status: res.status,
-      data: data
+      status: res2.status,
+      playlistId,
+      rawItem: data2.items?.[0],
+      mapped
     });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
