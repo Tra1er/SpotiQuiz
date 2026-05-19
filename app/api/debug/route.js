@@ -24,7 +24,17 @@ export async function GET() {
       headers: { Authorization: `Bearer ${session.accessToken}` },
     });
     
-    const data2 = await res2.json();
+    const text2 = await res2.text();
+    let data2;
+    try { data2 = JSON.parse(text2); } catch { data2 = text2; }
+
+    if (!res2.ok) {
+      return Response.json({
+        status: res2.status,
+        playlistId,
+        errorData: data2
+      });
+    }
 
     // Map to just what we care about to keep payload small
     const mapped = data2.items?.map(i => ({
